@@ -6,7 +6,11 @@ Supported direct inputs include WAV, MP3, M4A/MP4 AAC, FLAC, Ogg Opus, and WebM 
 
 ## Install
 
-Install the Skill from this repository into Codex, then install its runtime dependency:
+Ask Codex:
+
+> Install the Skill from https://github.com/HA7CH/transcribe-audio-skill
+
+Then install its runtime dependency:
 
 ```bash
 brew tap wangnov/tap
