@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: transcribe-audio <local-audio-path> [language]" >&2
+  exit 2
+fi
+
+audio_path="$1"
+language="${2:-}"
+
+if [[ ! -f "$audio_path" ]]; then
+  echo "audio file not found or not a regular file: $audio_path" >&2
+  exit 2
+fi
+
+audio_dir="$(cd "$(dirname "$audio_path")" && pwd -P)"
+audio_file="$audio_dir/$(basename "$audio_path")"
+
+if [[ -n "${CODEX_ASR_BIN:-}" ]]; then
+  codex_asr="$CODEX_ASR_BIN"
+elif command -v codex-asr >/dev/null 2>&1; then
+  codex_asr="$(command -v codex-asr)"
+else
+  echo "codex-asr is not installed or not available on PATH" >&2
+  echo "install it from https://github.com/Wangnov/codex-asr" >&2
+  exit 127
+fi
+
+if [[ ! -x "$codex_asr" ]]; then
+  echo "codex-asr is not executable: $codex_asr" >&2
+  exit 127
+fi
+
+request_timeout="${TRANSCRIBE_AUDIO_REQUEST_TIMEOUT_SECONDS:-900}"
+connect_timeout="${TRANSCRIBE_AUDIO_CONNECT_TIMEOUT_SECONDS:-15}"
+chunk_seconds="${TRANSCRIBE_AUDIO_CHUNK_SECONDS:-600}"
+
+transcribe_one() {
+  local input_file="$1"
+  local args=(
+    "$input_file"
+    --request-timeout-seconds "$request_timeout"
+    --connect-timeout-seconds "$connect_timeout"
+  )
+  if [[ -n "$language" ]]; then
+    args+=(--language "$language")
+  fi
+  "$codex_asr" "${args[@]}"
+}
+
+duration=""
+if command -v ffprobe >/dev/null 2>&1; then
+  duration="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$audio_file" 2>/dev/null || true)"
+fi
+
+needs_split=0
+if [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  if awk -v duration="$duration" -v limit="$chunk_seconds" 'BEGIN { exit !(duration > limit) }'; then
+    needs_split=1
+  fi
+fi
+
+if [[ "$needs_split" -eq 0 ]]; then
+  transcript="$(transcribe_one "$audio_file")"
+  printf '%s\n' "$transcript"
+  exit 0
+fi
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "audio is longer than ${chunk_seconds} seconds and ffmpeg is not installed" >&2
+  exit 127
+fi
+
+chunk_dir="$(mktemp -d "${TMPDIR:-/tmp}/transcribe-audio.XXXXXX")"
+cleanup() {
+  rm -rf "$chunk_dir"
+}
+trap cleanup EXIT INT TERM
+
+echo "audio is ${duration}s; splitting locally into ${chunk_seconds}s chunks" >&2
+ffmpeg -hide_banner -loglevel error -i "$audio_file" \
+  -f segment -segment_time "$chunk_seconds" -reset_timestamps 1 \
+  -ac 1 -ar 16000 -c:a pcm_s16le "$chunk_dir/chunk-%04d.wav"
+
+found_chunk=0
+for chunk in "$chunk_dir"/chunk-*.wav; do
+  [[ -f "$chunk" ]] || continue
+  found_chunk=1
+  transcribe_one "$chunk"
+  printf '\n'
+done
+
+if [[ "$found_chunk" -eq 0 ]]; then
+  echo "ffmpeg did not produce any audio chunks" >&2
+  exit 1
+fi

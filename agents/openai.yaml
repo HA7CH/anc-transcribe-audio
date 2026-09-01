@@ -1,0 +1,4 @@
+interface:
+  display_name: "HA7CH Transcribe Audio"
+  short_description: "Turn local audio files into faithful transcripts"
+  default_prompt: "Use $transcribe-audio to produce a faithful transcript of this local audio file."
