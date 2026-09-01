@@ -1,9 +1,9 @@
 ---
-name: transcribe-audio
+name: anc-transcribe-audio
 description: Transcribe a user-provided local audio file into a faithful verbatim transcript with codex-asr. Use when the user asks what a recording says or requests an original transcript from WAV, MP3, M4A, FLAC, Ogg, WebM, or supported WeChat SILK audio.
 ---
 
-# Transcribe Audio
+# ANC Transcribe Audio
 
 Transcribe the audio before answering whenever the user's request depends on hearing it. Do not infer speech from a filename or surrounding context.
 

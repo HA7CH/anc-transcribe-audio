@@ -1,4 +1,4 @@
-# HA7CH Transcribe Audio
+# ANC Transcribe Audio
 
 An open Codex Skill that turns a user-provided local audio file into a faithful transcript. It is published by HA7CH but has no dependency on ANC, a HA7CH vault, or a specific workspace layout.
 
@@ -8,7 +8,7 @@ Supported direct inputs include WAV, MP3, M4A/MP4 AAC, FLAC, Ogg Opus, and WebM 
 
 Ask Codex:
 
-> Install the Skill from https://github.com/HA7CH/transcribe-audio-skill
+> Install the Skill from https://github.com/HA7CH/anc-transcribe-audio
 
 Then install its runtime dependency:
 
@@ -23,9 +23,9 @@ brew install codex-asr
 brew install ffmpeg
 ```
 
-After installation, ask Codex to use `$transcribe-audio` on a local audio file, for example:
+After installation, ask Codex to use `$anc-transcribe-audio` on a local audio file, for example:
 
-> Use $transcribe-audio to produce the original Chinese transcript of this WAV file.
+> Use $anc-transcribe-audio to produce the original Chinese transcript of this WAV file.
 
 ## What happens to the audio
 
