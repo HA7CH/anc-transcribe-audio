@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "usage: transcribe-audio <local-audio-path> [language]" >&2
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+  echo "usage: transcribe-audio <local-audio-path> [language] [output-markdown]" >&2
   exit 2
 fi
 
 audio_path="$1"
 language="${2:-}"
+output_path="${3:-}"
 
 if [[ ! -f "$audio_path" ]]; then
   echo "audio file not found or not a regular file: $audio_path" >&2
@@ -35,9 +36,29 @@ fi
 request_timeout="${TRANSCRIBE_AUDIO_REQUEST_TIMEOUT_SECONDS:-900}"
 connect_timeout="${TRANSCRIBE_AUDIO_CONNECT_TIMEOUT_SECONDS:-15}"
 chunk_seconds="${TRANSCRIBE_AUDIO_CHUNK_SECONDS:-600}"
+max_attempts="${TRANSCRIBE_AUDIO_MAX_ATTEMPTS:-2}"
+
+if ! [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+  echo "TRANSCRIBE_AUDIO_MAX_ATTEMPTS must be a positive integer" >&2
+  exit 2
+fi
+
+if [[ -n "$output_path" && -e "$output_path" ]]; then
+  echo "output already exists; choose a new path: $output_path" >&2
+  exit 2
+fi
+
+work_dir="$(mktemp -d "${TMPDIR:-/tmp}/anc-transcribe-audio.XXXXXX")"
+cleanup() {
+  rm -rf "$work_dir"
+}
+trap cleanup EXIT INT TERM
 
 transcribe_one() {
   local input_file="$1"
+  local transcript_file="$2"
+  local error_file="$3"
+  local attempt=1
   local args=(
     "$input_file"
     --request-timeout-seconds "$request_timeout"
@@ -46,7 +67,22 @@ transcribe_one() {
   if [[ -n "$language" ]]; then
     args+=(--language "$language")
   fi
-  "$codex_asr" "${args[@]}"
+
+  while (( attempt <= max_attempts )); do
+    if "$codex_asr" "${args[@]}" >"$transcript_file" 2>"$error_file"; then
+      return 0
+    fi
+    if (( attempt < max_attempts )); then
+      echo "transcription attempt ${attempt} failed for $(basename "$input_file"); retrying" >&2
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  echo "transcription failed after ${max_attempts} attempt(s) for $(basename "$input_file")" >&2
+  if [[ -s "$error_file" ]]; then
+    sed -n '1,12p' "$error_file" >&2
+  fi
+  return 1
 }
 
 duration=""
@@ -61,37 +97,90 @@ if [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   fi
 fi
 
-if [[ "$needs_split" -eq 0 ]]; then
-  transcript="$(transcribe_one "$audio_file")"
-  printf '%s\n' "$transcript"
+inputs=("$audio_file")
+if [[ "$needs_split" -eq 1 ]]; then
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "audio is longer than ${chunk_seconds} seconds and ffmpeg is not installed" >&2
+    exit 127
+  fi
+
+  chunk_dir="$work_dir/chunks"
+  mkdir -p "$chunk_dir"
+  echo "audio is ${duration}s; splitting locally into ${chunk_seconds}s chunks" >&2
+  ffmpeg -hide_banner -loglevel error -i "$audio_file" \
+    -f segment -segment_time "$chunk_seconds" -reset_timestamps 1 \
+    -ac 1 -ar 16000 -c:a pcm_s16le "$chunk_dir/chunk-%04d.wav"
+
+  inputs=()
+  for chunk in "$chunk_dir"/chunk-*.wav; do
+    [[ -f "$chunk" ]] || continue
+    inputs+=("$chunk")
+  done
+  if [[ ${#inputs[@]} -eq 0 ]]; then
+    echo "ffmpeg did not produce any audio chunks" >&2
+    exit 1
+  fi
+fi
+
+transcript_files=()
+index=0
+for input_file in "${inputs[@]}"; do
+  transcript_file="$work_dir/transcript-$(printf '%04d' "$index").txt"
+  error_file="$work_dir/error-$(printf '%04d' "$index").txt"
+  echo "transcribing part $((index + 1)) of ${#inputs[@]}" >&2
+  transcribe_one "$input_file" "$transcript_file" "$error_file"
+  transcript_files+=("$transcript_file")
+  index=$((index + 1))
+done
+
+combined_transcript="$work_dir/complete-transcript.txt"
+: >"$combined_transcript"
+index=0
+for transcript_file in "${transcript_files[@]}"; do
+  if (( index > 0 )); then
+    printf '\n\n' >>"$combined_transcript"
+  fi
+  cat "$transcript_file" >>"$combined_transcript"
+  index=$((index + 1))
+done
+
+if [[ -z "$output_path" ]]; then
+  cat "$combined_transcript"
+  printf '\n'
   exit 0
 fi
 
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  echo "audio is longer than ${chunk_seconds} seconds and ffmpeg is not installed" >&2
-  exit 127
+output_dir="$(dirname "$output_path")"
+mkdir -p "$output_dir"
+output_dir="$(cd "$output_dir" && pwd -P)"
+output_file="$output_dir/$(basename "$output_path")"
+if [[ -e "$output_file" ]]; then
+  echo "output already exists; choose a new path: $output_file" >&2
+  exit 2
 fi
 
-chunk_dir="$(mktemp -d "${TMPDIR:-/tmp}/transcribe-audio.XXXXXX")"
-cleanup() {
-  rm -rf "$chunk_dir"
-}
-trap cleanup EXIT INT TERM
+source_name="$(basename "$audio_file")"
+title="${source_name%.*}"
+duration_label="unknown"
+if [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  duration_label="$(awk -v seconds="$duration" 'BEGIN { total=int(seconds+0.5); printf "%02d:%02d:%02d", int(total/3600), int((total%3600)/60), total%60 }')"
+fi
+language_label="auto"
+if [[ -n "$language" ]]; then
+  language_label="$language"
+fi
 
-echo "audio is ${duration}s; splitting locally into ${chunk_seconds}s chunks" >&2
-ffmpeg -hide_banner -loglevel error -i "$audio_file" \
-  -f segment -segment_time "$chunk_seconds" -reset_timestamps 1 \
-  -ac 1 -ar 16000 -c:a pcm_s16le "$chunk_dir/chunk-%04d.wav"
-
-found_chunk=0
-for chunk in "$chunk_dir"/chunk-*.wav; do
-  [[ -f "$chunk" ]] || continue
-  found_chunk=1
-  transcribe_one "$chunk"
+markdown_tmp="$(mktemp "$output_dir/.anc-transcribe-audio.XXXXXX")"
+{
+  printf '# %s — 原文稿\n\n' "$title"
+  printf -- '- Source: %s\n' "$source_name"
+  printf -- '- Duration: %s\n' "$duration_label"
+  printf -- '- Language hint: %s\n' "$language_label"
+  printf -- '- Generated by: ANC Transcribe Audio\n\n'
+  printf '## Transcript\n\n'
+  cat "$combined_transcript"
   printf '\n'
-done
+} >"$markdown_tmp"
 
-if [[ "$found_chunk" -eq 0 ]]; then
-  echo "ffmpeg did not produce any audio chunks" >&2
-  exit 1
-fi
+mv "$markdown_tmp" "$output_file"
+printf '%s\n' "$output_file"

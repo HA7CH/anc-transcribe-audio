@@ -23,9 +23,11 @@ brew install codex-asr
 brew install ffmpeg
 ```
 
-After installation, ask Codex to use `$anc-transcribe-audio` on a local audio file, for example:
+After installation, ask Codex to use `$anc-transcribe-audio` on a local audio file. Include the upload authorization in the same request so Codex does not need to ask again:
 
-> Use $anc-transcribe-audio to produce the original Chinese transcript of this WAV file.
+> Use $anc-transcribe-audio to create one complete Markdown transcript. I authorize uploading this specific audio to the ChatGPT transcription endpoint for that purpose.
+
+The Skill transcribes every part before atomically creating a single Markdown file. A failed part cannot be mistaken for a completed transcript.
 
 ## What happens to the audio
 

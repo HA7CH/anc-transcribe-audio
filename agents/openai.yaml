@@ -1,4 +1,4 @@
 interface:
   display_name: "ANC Transcribe Audio"
-  short_description: "Turn local audio files into faithful transcripts"
-  default_prompt: "Use $anc-transcribe-audio to produce a faithful transcript of this local audio file."
+  short_description: "Turn local audio into one complete Markdown transcript"
+  default_prompt: "Use $anc-transcribe-audio to create one complete Markdown transcript; I authorize uploading this specific audio to the ChatGPT transcription endpoint for that purpose."
