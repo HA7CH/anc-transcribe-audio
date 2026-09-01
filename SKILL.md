@@ -10,7 +10,7 @@ Transcribe the audio before answering whenever the user's request depends on hea
 Run:
 
 ```bash
-scripts/transcribe-audio <local-audio-path> [language]
+bash scripts/transcribe-audio <local-audio-path> [language]
 ```
 
 - Pass a language hint such as `zh` or `en` only when it is known from the conversation.

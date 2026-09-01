@@ -42,13 +42,13 @@ chmod +x "$test_dir/ffmpeg"
 export PATH="$test_dir:$PATH"
 export CODEX_ASR_BIN="$test_dir/fake-codex-asr"
 
-short_output="$($helper "$test_dir/short.wav" zh)"
+short_output="$(bash "$helper" "$test_dir/short.wav" zh)"
 [[ "$short_output" == "transcript:short.wav:zh" ]]
 
-long_output="$($helper "$test_dir/long.wav")"
+long_output="$(bash "$helper" "$test_dir/long.wav")"
 [[ "$long_output" == $'transcript:chunk-0000.wav\n\ntranscript:chunk-0001.wav\n\ntranscript:chunk-0002.wav' ]]
 
-if "$helper" "$test_dir/missing.wav" >/dev/null 2>&1; then
+if bash "$helper" "$test_dir/missing.wav" >/dev/null 2>&1; then
   echo "expected a missing file to fail" >&2
   exit 1
 fi

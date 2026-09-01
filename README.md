@@ -32,7 +32,7 @@ This is an unofficial local adapter, not the official OpenAI Audio API. The upst
 ## Development
 
 ```bash
-scripts/test-transcribe-audio.sh
+bash scripts/test-transcribe-audio.sh
 python3 /path/to/skill-creator/scripts/quick_validate.py .
 ```
 
